@@ -15,6 +15,6 @@ SELECT
     ROUND(SUM(CASE WHEN f.booking_id IS NOT NULL THEN p.amount ELSE 0 END), 2) AS fraud_amount,
     ROUND(COUNT(f.booking_id) * 100.0 / COUNT(*), 2)                           AS fraud_pct
 FROM bookings_current b
-JOIN payments_bronze  p ON p.booking_id = b.booking_id
+JOIN payments         p ON p.booking_id = b.booking_id
 LEFT JOIN fraud       f ON f.booking_id = b.booking_id
 GROUP BY p.payment_method;

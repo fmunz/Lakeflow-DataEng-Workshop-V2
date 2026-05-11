@@ -1,6 +1,5 @@
-CREATE OR REFRESH STREAMING TABLE payments_bronze
+CREATE OR REFRESH STREAMING TABLE payments
 COMMENT 'Payments stream from samples.wanderbricks.payments'
-TBLPROPERTIES ('quality' = 'bronze')
 AS SELECT
     payment_id,
     booking_id,

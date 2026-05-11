@@ -4,11 +4,12 @@ Databricks's new Data Engineering course, rebuilt around **Lakeflow Spark Declar
 
 ## What you'll do
 
-Three labs, ~110 minutes total:
+Four labs, ~130 minutes total:
 
-- **Lab 1 — Bakehouse (hand-coded).** Build a streaming table in Python (modern `from pyspark import pipelines as dp` API) and a materialized view in SQL over `samples.bakehouse.sales_transactions`. Reference files in [`lab1-bakehouse/`](./lab1-bakehouse/).
+- **Lab 1 — Bakehouse (hand-coded).** Build a streaming table in Python (modern `from pyspark import pipelines as dp` API) and a materialized view in SQL over `samples.bakehouse.sales_transactions`, wire up three different data-quality expectations (log / drop / abort), then publish a managed-Iceberg gold table read back with PyIceberg. Reference files in [`lab1-bakehouse/`](./lab1-bakehouse/).
 - **Lab 2 — Wanderbricks (SQL, Genie-Code-generated).** Build a four-table fraud-detection pipeline from a single Genie Code prompt — AutoCDC over `samples.wanderbricks.booking_updates`, Auto Loader over JSON fraud flags in a shared volume, a join of payments, and a gold materialized view. Verify the generated SQL against the reference files in [`lab2-wanderbricks/`](./lab2-wanderbricks/) before letting it run.
-- **Lab 3 — Gourmet Pipeline (Databricks Asset Bundle deploy).** Clone [`databricks/tmm/Lakeflow-Gourmet-Pipeline`](https://github.com/databricks/tmm/tree/main/Lakeflow-Gourmet-Pipeline) into your workspace, adjust two bundle variables (`catalog_name`, `prod_warehouse_id`) so it targets your own `<catalog>.<user>`, deploy + run the bundle from the Workspace UI.
+- **Lab 3 — Gourmet Pipeline (Databricks Asset Bundle deploy).** Clone [`databricks/tmm/Lakeflow-Gourmet-Pipeline`](https://github.com/databricks/tmm/tree/main/Lakeflow-Gourmet-Pipeline) into your workspace, adjust two bundle variables (`catalog_name`, `prod_warehouse_id`) so it targets your own `workshop.<user>`, deploy + run the bundle from the Workspace UI.
+- **Lab 4 — Zerobus direct ingest (REST).** Push one `{id, city, temp}` reading into the shared Delta table `workshop.zerobus.course_temp` via the Zerobus REST API — no SDK, no cluster dependency, service principal credentials fetched from a secret scope. Reference file in [`lab4-zerobus/`](./lab4-zerobus/).
 
 See [Labguide.md](./Labguide.md) for the step-by-step exercises.
 
@@ -16,8 +17,8 @@ See [Labguide.md](./Labguide.md) for the step-by-step exercises.
 
 - A Databricks workspace with Unity Catalog and Serverless enabled.
 - Partner-powered AI features enabled (Genie Code dependency).
-- A pre-assigned schema `<catalog>.<user>` per attendee.
-- The setup notebook has been run once to create the shared landing volume with seeded JSON fraud markers.
+- A pre-assigned schema `workshop.<user>` per attendee.
+- The [`setup_workshop.py`](./setup_workshop.py) notebook has been run once to (a) create the shared landing volume with seeded JSON fraud markers for Lab 2 and (b) provision the Zerobus target table, service principal, and secret scope for Lab 4.
 
 ## Tech covered
 
