@@ -7,4 +7,4 @@ AS SELECT
     payment_method,
     status,
     payment_date
-FROM STREAM samples.wanderbricks.payments;
+FROM stream(samples.wanderbricks.payments);

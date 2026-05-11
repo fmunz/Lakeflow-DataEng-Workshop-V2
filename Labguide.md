@@ -1,13 +1,16 @@
 # Lakeflow-DataEng-Workshop-V2 — Lab Guide
 
 > **Audience**: workshop attendee with a pre-assigned schema `workshop.<user>` (e.g. `workshop.user042`).
-> **Structure**: four labs.
-> - **Lab 1 — Bakehouse (hand-coded)**: streaming table in **Python**, materialized view in **SQL**, plus data-quality expectations and a managed-Iceberg side-quest read with PyIceberg. Reference files in [`lab1-bakehouse/`](./lab1-bakehouse/).
-> - **Lab 2 — Wanderbricks (Genie-Code-generated)**: four-file all-**SQL** pipeline (AutoCDC + Auto Loader + join gold MV), produced from a single Genie Code prompt — and verified by you before it runs. Reference files in [`lab2-wanderbricks/`](./lab2-wanderbricks/).
-> - **Lab 3 — Gourmet Pipeline (DAB deploy)**: clone the public `databricks/tmm/Lakeflow-Gourmet-Pipeline` asset bundle, adjust a couple of variables so it targets your own `workshop.<user>`, and deploy + run it from the Workspace UI.
-> - **Lab 4 — Zerobus (direct-to-Delta REST ingest)**: push one temperature reading into `workshop.zerobus.course_temp` via the Zerobus REST API, with credentials fetched from a shared secret scope. Reference files in [`lab4-zerobus/`](./lab4-zerobus/).
+> **Structure**: four core labs plus one optional side-quest.
+> - **Lab 1 — Bakehouse (hand-coded)**: streaming table in **Python**, materialized view in **SQL** with three data-quality expectations wired in from the start. Reference files in [`lab1-bakehouse/`](./lab1-bakehouse/).
+> - **Lab 2 — Learn how to use Genie Code (Wanderbricks)**: four-file all-**SQL** pipeline (AutoCDC + Auto Loader + join gold MV), produced from a single Genie Code prompt — and verified by you before it runs. Reference files in [`lab2-wanderbricks/`](./lab2-wanderbricks/).
+> - **Lab 3 — CI/CD via Declarative Automation Bundles**: clone the public `databricks/tmm/Lakeflow-Gourmet-Pipeline` bundle, retarget two variables to `workshop.<user>`, and deploy it from the Workspace UI — the same bundle a CI runner would ship with `databricks bundle deploy`.
+> - **Lab 4 — Push IoT temperature reading via Zerobus Ingest** *(live instructor demo; attendees may follow along)*: one HTTP POST lands a row in `workshop.zerobus.course_temp`, with credentials fetched from a shared secret scope. Reference files in [`lab4-zerobus/`](./lab4-zerobus/).
+> - **Lab 5 — Iceberg side-quest** *(optional)*: publish a derived bakehouse result as a managed Iceberg table and read it back with PyIceberg through the Unity Catalog Iceberg REST endpoint — no Spark session required. Reference files in [`lab5-iceberg/`](./lab5-iceberg/).
 >
-> Pedagogical arc: Lab 1 = author by hand. Lab 2 = author with AI, verify. Lab 3 = deploy someone else's production-style bundle.
+> Pedagogical arc: Lab 1 = author by hand. Lab 2 = author with AI, verify. Lab 3 = deploy someone else's bundle — the CI/CD primitive. Lab 4 = produce from outside the platform. Lab 5 = take-home bonus on Iceberg interoperability.
+>
+> SDP's pitch is simple: you declare the target table; the platform owns the scheduling, dependencies, and incremental state.
 
 ## Prerequisites (already done by the setup notebook)
 
@@ -17,9 +20,26 @@
 - You can read `samples.bakehouse.*` and `samples.wanderbricks.*` (public sample data).
 - **Partner-powered AI features** are enabled (Genie Code requires this).
 
+### Substitutions
+
+Three placeholders show up throughout — resolve them once here, then paste blocks run as-is.
+
+| Placeholder | What to use |
+|---|---|
+| `<user>` | Your pre-assigned schema name (e.g. `user042`). Find it in Catalog Explorer under `workshop`. |
+| `workshop` | The catalog. Fixed — do not change. |
+| `prod_warehouse_id` (Lab 3 only) | A running SQL warehouse ID. Find it in sidebar **SQL Warehouses** → click a warehouse → copy the ID from the URL. |
+| `<course_warehouse_name>` / `<course_warehouse_id>` (Lab 4 only) | The course SQL warehouse provisioned for you by the courseware. Your instructor will share the exact name and ID. |
+
 ---
 
-## Lab 0 — Create the pipeline (new Lakeflow Pipelines Editor)
+## Lab 1 — Bakehouse (hand-coded)
+
+You'll hand-code a Spark Declarative Pipeline over the bakehouse sample data: one Streaming Table in Python for incremental ingest, and one Materialized View in SQL for KPIs with three `EXPECT` expectations wired in from the start so you see log / drop / fail behaviors in a single round trip.
+
+### Set up the pipeline in the Lakeflow Pipelines Editor
+
+Before you write a single line, create the pipeline that will host Steps 1a and 1b:
 
 1. Workspace sidebar → **New** → **ETL pipeline**. The **Lakeflow Pipelines Editor** opens with a default name `New Pipeline <date> <time>`.
 2. Click the name → rename to `workshop_<user>`.
@@ -28,14 +48,8 @@
    - **Default schema**: type `<user>` and click **Save**. The dropdown sometimes only offers *"Create schema"* even though your `<user>` schema already exists — ignore that, the typed literal is accepted.
 
    Unqualified table names now resolve to `workshop.<user>.<table>`. The full **Pipeline settings** panel may open after Save — close it with the ✕ to return to the editor.
-4. The default file `my_transformation.py` is already Python (Lab 1a uses Python). The editor opens blank with a placeholder — just start typing.
+4. The default file `my_transformation.py` is already Python — Step 1a uses Python. The editor opens blank with a placeholder; just start typing.
 5. Confirm **⚙ Settings** shows **Serverless** ON and Unity Catalog selected.
-
----
-
-## Lab 1 — Bakehouse (hand-coded)
-
-You'll ingest `samples.bakehouse.sales_transactions` (3,333 bakery transactions) and compute KPIs. One streaming table in Python, one materialized view in SQL — deliberate so you see both authoring styles in the same lab.
 
 ### Step 1a — Streaming table (Python)
 
@@ -56,39 +70,9 @@ def sales_transactions():
 
 Click **Run file**. The DAG sidebar shows one node `sales_transactions` (~3,333 rows).
 
-### Step 1b — Materialized view (SQL)
+### Step 1b — Materialized view with data-quality expectations (SQL, copy-and-paste)
 
-Asset browser → **Add → Transformation** → name `sales_stats`, language **SQL** → **Create**. Paste:
-
-```sql
-CREATE OR REFRESH MATERIALIZED VIEW sales_stats
-COMMENT 'Sales KPIs grouped by product and payment method'
-TBLPROPERTIES ('quality' = 'silver')
-AS SELECT
-    product,
-    paymentMethod,
-    COUNT(*)                     AS txn_count,
-    SUM(quantity)                AS units_sold,
-    ROUND(SUM(totalPrice), 2)    AS gross_revenue,
-    ROUND(AVG(totalPrice), 2)    AS avg_txn_value,
-    COUNT(DISTINCT customerID)   AS unique_customers,
-    COUNT(DISTINCT franchiseID)  AS franchises_selling
-FROM sales_transactions
-GROUP BY product, paymentMethod;
-```
-
-Click **Run pipeline**. The DAG now shows `sales_transactions → sales_stats` (up to 6 × 3 = 18 rows, one per product × payment method).
-
-**Key teaching points**
-- Python for the streaming table (1a): `from pyspark import pipelines as dp` + `@dp.table` + `spark.readStream.table(...)` — modern SDP API. Not legacy `import dlt`.
-- SQL for the materialized view (1b): `CREATE OR REFRESH MATERIALIZED VIEW` (never `CREATE OR REPLACE`). The relative name `sales_transactions` resolves against the pipeline's default catalog + schema.
-- Same pipeline can mix Python and SQL files — no special configuration needed.
-
-### Step 1c — Add data-quality expectations to `sales_stats`
-
-SDP has **one** constraint syntax — `CONSTRAINT <name> EXPECT (<predicate>)` — and **three** violation behaviors: *log* (default), *drop row*, and *fail update*. Instead of showing three alternative MVs, wire all three into a single `sales_stats` definition — one expectation per behavior, each checking something different.
-
-Replace the body of `sales_stats.sql` with:
+Asset browser → **Add → Transformation** → name `sales_stats`, language **SQL** → **Create**. Paste the block below — no replacement step later; the three expectations are already wired in:
 
 ```sql
 CREATE OR REFRESH MATERIALIZED VIEW sales_stats (
@@ -108,6 +92,7 @@ CREATE OR REFRESH MATERIALIZED VIEW sales_stats (
         EXPECT (paymentMethod IS NOT NULL) ON VIOLATION FAIL UPDATE
 )
 COMMENT 'Sales KPIs grouped by product and payment method, with data-quality expectations'
+TBLPROPERTIES ('quality' = 'silver')
 AS SELECT
     product,
     paymentMethod,
@@ -121,106 +106,46 @@ FROM sales_transactions
 GROUP BY product, paymentMethod;
 ```
 
-Click **Run pipeline**. The `sales_stats` node in the DAG now shows the three constraints in its sidebar. Open the event log and filter for `flow_progress` → you'll see a `data_quality.expectations` block with all three constraint names and their `passed_records` / `failed_records` counts.
+Click **Run pipeline**. The DAG now shows `sales_transactions → sales_stats` (up to 6 × 3 = 18 rows, one per product × payment method). The `sales_stats` node shows the three constraints in its sidebar. Open the event log and filter for `flow_progress` → you'll see a `data_quality.expectations` block with each constraint's `passed_records` / `failed_records` counts.
 
-**What to observe**
-- The bakehouse sample data is clean, so all three expectations pass and row counts match Step 1b.
-- To see a *drop* in action, weaken one predicate (e.g., `EXPECT (avg_txn_value > 10000) ON VIOLATION DROP ROW`) and re-run — rows disappear and the dropped count climbs.
-- To see an *abort*, flip `known_payment_method` to `EXPECT (paymentMethod = 'gold_card')` — the update fails with the constraint name in the error.
+SDP has **one** constraint syntax — `CONSTRAINT <name> EXPECT (<predicate>)` — and **three** violation behaviors: *log* (default), *drop row*, and *fail update*. Wiring all three into one view shows every behavior in a single round trip.
+
+**Key teaching points**
+- Python for the streaming table (1a): `from pyspark import pipelines as dp` + `@dp.table` + `spark.readStream.table(...)` — modern SDP API. Not legacy `import dlt`.
+- SQL for the materialized view (1b): `CREATE OR REFRESH MATERIALIZED VIEW` (never `CREATE OR REPLACE`). The relative name `sales_transactions` resolves against the pipeline's default catalog + schema.
+- Same pipeline can mix Python and SQL files — no special configuration needed.
+- The bakehouse sample data is clean, so all three expectations pass and row counts match a constraint-free version.
 - Same `CONSTRAINT ... EXPECT ... [ON VIOLATION ...]` syntax works on **streaming tables**: put the block inside `CREATE OR REFRESH STREAMING TABLE <name> (...)`.
 
-### Step 1d — Top-5 sales locations as a managed Iceberg table (SQL, outside the pipeline)
+**Is this MV incrementally maintained or fully recomputed?**
 
-The streaming table is Delta. To make a derived result readable by any Iceberg-compatible engine (PyIceberg, Trino, Snowflake, OSS Spark) without configuring an external location for UniForm Compatibility Mode, the simplest path is a **CTAS into a managed Iceberg table** — run it *outside* the pipeline in the SQL editor or a `%sql` cell.
+A Materialized View is either *incrementally maintained* (only the rows that changed are reprocessed) or *fully recomputed* on refresh, depending on whether the SDP planner can rewrite the query as an incremental update. Simple projections, filters, and many aggregations qualify for incremental maintenance; `COUNT(DISTINCT …)` — which `sales_stats` uses twice — typically forces a **COMPLETE refresh** because distinct tracking isn't incrementally maintainable without a lot more state.
 
-Open a new SQL editor tab (sidebar **SQL Editor** → **Create new query**) and run, replacing `workshop` and `<user>`:
+Where to see which mode ran:
+- **DAG node** — click the `sales_stats` node; the right-hand flow details panel shows the refresh type (`COMPLETE` vs `INCREMENTAL`) from the most recent run.
+- **Event log** — filter by `event_type = 'flow_progress'` and inspect the `details.flow_progress.status` / `planning_information` fields. The planner records the chosen execution mode and, for full recomputes, the reason it couldn't go incremental.
+- **Proof by experiment** — drop the two `COUNT(DISTINCT …)` expressions from `sales_stats` and re-run. The planner can now maintain the view incrementally, and the flow details flip to `INCREMENTAL`. Attendees often find this more convincing than reading docs.
 
-```sql
-CREATE OR REPLACE TABLE workshop.<user>.global_sales_gold
-USING ICEBERG
-AS
-SELECT
-    f.city,
-    f.country,
-    COUNT(*)                    AS txn_count,
-    SUM(t.quantity)             AS units_sold,
-    ROUND(SUM(t.totalPrice), 2) AS gross_revenue
-FROM workshop.<user>.sales_transactions t
-JOIN samples.bakehouse.sales_franchises f
-    USING (franchiseID)
-GROUP BY f.city, f.country
-ORDER BY gross_revenue DESC
-LIMIT 5;
-```
+**Try a violation yourself (optional)**
+- To see a *drop* in action, weaken one predicate (e.g., `EXPECT (avg_txn_value > 10000) ON VIOLATION DROP ROW`) and re-run — rows disappear and the dropped count climbs.
+- To see an *abort*, flip `known_payment_method` to `EXPECT (paymentMethod = 'gold_card')` — the update fails with the constraint name in the error.
 
-**Why this shape:**
-- `USING ICEBERG` creates a **native managed Iceberg table** — full read/write from Databricks *and* external engines via the UC Iceberg REST Catalog (IRC).
-- No `delta.universalFormat.*` properties, no `compatibility.location`, no external location to pre-configure. Managed Iceberg is self-contained.
-- Snapshot, not live. Re-run this CTAS (or swap to `INSERT OVERWRITE`) to refresh — acceptable for an analytics/gold table; if you need live-as-it-changes semantics, that's UniForm Compatibility Mode territory instead.
-- `samples.bakehouse.sales_franchises` supplies the `city` / `country` dimensions — `sales_transactions` itself only has `franchiseID`.
+### Lab 1 take-away
 
-Verify:
-
-```sql
-SELECT * FROM workshop.<user>.global_sales_gold;
-```
-
-You should see 5 rows, top cities by gross revenue. In `DESCRIBE EXTENDED`, the `Provider` column reads `iceberg`.
-
-### Step 1e — Read the Iceberg table with PyIceberg (Exploration notebook)
-
-Now read the same table with a lightweight Iceberg client — no Spark required.
-
-Asset browser → **Add → Exploration** → name `read_global_sales_gold` → language **Python** → **Create**. Paste:
-
-```python
-# MAGIC %pip install --upgrade "pyiceberg>=0.9,<0.10" "pyarrow>=17,<20"
-# (Azure workspaces only) %pip install adlfs
-dbutils.library.restartPython()
-```
-
-```python
-from pyiceberg.catalog import load_catalog
-
-WORKSPACE = spark.conf.get("spark.databricks.workspaceUrl")  # e.g. "dbc-xxx.cloud.databricks.com"
-CATALOG   = "workshop"   # workshop UC catalog
-SCHEMA    = "<user>"      # your pre-assigned schema
-TOKEN     = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()
-
-iceberg_catalog = load_catalog(
-    "uc",
-    uri=f"https://{WORKSPACE}/api/2.1/unity-catalog/iceberg-rest",
-    warehouse=CATALOG,     # pins the UC catalog — subsequent identifiers are <schema>.<table>
-    token=TOKEN,
-)
-
-tbl = iceberg_catalog.load_table(f"{SCHEMA}.global_sales_gold")
-print(tbl.current_snapshot())             # snapshot metadata proves this is Iceberg
-tbl.scan(limit=10).to_pandas()            # top-5 rows as pandas
-```
-
-**What you just demonstrated:**
-- `pip install pyiceberg` — no cluster restart, no Iceberg JARs, no Spark session. A pure-Python client talks to Unity Catalog via the **Iceberg REST Catalog** endpoint at `/api/2.1/unity-catalog/iceberg-rest`.
-- The `warehouse` parameter pins the UC catalog, so table identifiers collapse from three-part to two-part.
-- For external clients (outside Databricks), the same code works — just supply a PAT or OAuth token and the workspace URL. That's the portability story for Iceberg on UC.
-
-**Requirements your admin has likely already set** (workshop attendees usually inherit these; flag with the instructor if any call fails with `403`):
-- `EXTERNAL USE SCHEMA` on `workshop.<user>`
-- External data access enabled on the workspace
-- Workspace IP access list (if enabled) allows your client
-
-> Reference copies of the CTAS and the PyIceberg reader live in [`lab1-bakehouse/`](./lab1-bakehouse/) alongside this guide.
+Streaming ingest + MV refresh + three DQ behaviors, all in about 40 lines of declarative code. Without SDP, that's a streaming job, a batch job, and a scheduler — three separate systems to wire together.
 
 ---
 
-## Lab 2 — Wanderbricks in SQL (generated by Genie Code)
+## Lab 2 — Learn how to use Genie Code (Wanderbricks)
 
-In this lab you do not write SQL yourself. You give Genie Code one prompt; it proposes a plan and four SQL files; you **verify** each file before approving it to run.
+Same editor, same pipeline shape, but you don't write the SQL — Genie Code does, from one business-level prompt, and you verify each of the four proposed files before approving it. Covers AutoCDC against the `booking_updates` CDC feed keyed on `booking_id`, Auto Loader over a JSON volume of fraud markers, a plain Streaming Table on payments, and a gold Materialized View that joins all three. The pedagogy is the verification loop, not the typing.
+
+You won't write SQL in this lab. You'll prompt, you'll review, you'll approve. Genie Code drafts four files; you verify each one before it runs.
 
 ### Open Genie Code
 
 1. Upper-right of the workspace → click **Genie Code**. The side panel opens.
-2. Lower-right of the panel → confirm the **Agent** toggle is on.
+2. At the bottom of the Genie Code pane, confirm the **Agent** mode selector is set to **Agent** (not **Chat**).
 3. Expect approval prompts (Allow / Decline / Allow in this thread / Always allow) whenever Genie Code wants to create a file or run code — **never** click *Always allow* in this lab; reviewing each diff is the point.
 
 ### The prompt
@@ -257,6 +182,8 @@ If a file drifts (extra staging tables, `CREATE OR REPLACE`, missing `STREAM` ke
 
 The reference SQL below is **one valid shape** — your generation may use different table names or column names. That is fine as long as the result answers the business question.
 
+AutoCDC is a time-lapse, not a scrapbook. Every update collapses into one current row per `booking_id` — the latest state wins, history fades.
+
 #### Reference — `bookings_current.sql`
 
 ```sql
@@ -264,7 +191,7 @@ CREATE OR REFRESH STREAMING TABLE bookings_current
 COMMENT 'Latest state of each booking, rebuilt from booking_updates via AutoCDC';
 
 CREATE FLOW bookings_current_flow AS AUTO CDC INTO bookings_current
-FROM STREAM samples.wanderbricks.booking_updates
+FROM stream(samples.wanderbricks.booking_updates)
 KEYS (booking_id)
 SEQUENCE BY updated_at
 COLUMNS * EXCEPT (booking_update_id)
@@ -306,7 +233,7 @@ AS SELECT
     payment_method,
     status,
     payment_date
-FROM STREAM samples.wanderbricks.payments;
+FROM stream(samples.wanderbricks.payments);
 ```
 
 Expected after run: ~49,638 rows.
@@ -361,9 +288,11 @@ Explain the data flow in this pipeline end-to-end. Which node is incrementally m
 
 ---
 
-## Lab 3 — Deploy the Gourmet Pipeline (Databricks Asset Bundle)
+## Lab 3 — CI/CD via Declarative Automation Bundles (Gourmet Pipeline)
 
-Labs 1–2 had you author files inside the pipeline editor. Lab 3 is a production-style workflow: **clone** an existing open-source Databricks Asset Bundle (DAB) from GitHub, **adjust two variables** so it targets your own schema, and **deploy + run** it from the Workspace UI.
+Lab 3 is about CI/CD for data products. A **Declarative Automation Bundle** (DAB — formerly *Databricks Asset Bundle*; the CLI is still `databricks bundle`) is the deployable unit: one `databricks.yml` plus a `resources/` folder capture an entire data product — SDP pipelines, jobs, dashboards, Lakeflow Connect flows — as versioned code. The same bundle deploys interactively from the Workspace **Deployments** pane (what you'll do here) or non-interactively from `databricks bundle deploy -t prod` in a GitHub Action. No shell recipes, no drift between envs, no screenshot-driven promotion.
+
+You'll sparse-clone the public `databricks/tmm/Lakeflow-Gourmet-Pipeline` bundle, retarget two variables in `databricks.yml` so it points at your own schema, then deploy it. One versioned artifact lands a SQL-only Bronze-Silver-Gold SDP, a `gourmet-workflow` job with `ai_query` enrichment, and an AI/BI dashboard.
 
 Source repo: `https://github.com/databricks/tmm/tree/main/Lakeflow-Gourmet-Pipeline`.
 
@@ -431,7 +360,20 @@ Alternatively, if you don't want to run the AI tasks at all, skip this step and 
 
 1. In **Bundle resources**, find **Jobs → `gourmet-workflow`**. Click the **Run** (▶) icon.
 2. Monitor progress in **Job Runs**. The workflow ingests franchise / supplier / transaction data, runs the SDP transformations, executes the AI enrichment steps, and refreshes the dashboard.
-3. After the run finishes, open the deployed **AI/BI dashboard** and explore it — it blends real-time transaction data with AI-generated localized marketing campaigns.
+3. After the run finishes, open the deployed **AI/BI dashboard**.
+
+One YAML file just deployed the medallion pipeline, the orchestration job, the AI enrichment, and the dashboard.
+
+### The CI/CD equivalent in one snippet
+
+You deployed interactively. A CI runner deploys the same bundle with two CLI calls:
+
+```bash
+databricks bundle validate
+databricks bundle deploy -t prod
+```
+
+In a GitHub Actions workflow, that's a single step on push-to-main; `-t dev` on pull-request-open uses the same `databricks.yml` with different variable values per target. The bundle is the deployable atom; the UI and the CLI are two entry points to the same deploy.
 
 ### Troubleshooting
 
@@ -444,18 +386,27 @@ Alternatively, if you don't want to run the AI tasks at all, skip this step and 
 
 ### What to take away
 
-- **Bundles as deploy unit**: `databricks.yml` + `resources/*.yml` captures an entire data product (SDP pipelines + jobs + dashboards + Lakeflow Connect flows) as version-controlled code.
-- **Variables + targets**: `${workspace.current_user.short_name}` lets one bundle deploy per-user in a workshop with minimal per-student edits.
+- **Bundles are the CI/CD primitive for data products**: `databricks.yml` + `resources/*.yml` captures an entire data product (SDP pipelines, jobs, dashboards, Lakeflow Connect flows) as versioned code. One file tree, committable, reviewable, deployable.
+- **Targets separate dev from prod**: `targets:` in `databricks.yml` defines per-environment overrides. A CI pipeline runs `databricks bundle deploy -t prod` on merge to main and `-t dev` on PR open — same bundle, different catalog and warehouse.
+- **Variables + workspace placeholders**: `${workspace.current_user.short_name}` lets one bundle deploy per-user in dev with no hardcoded schemas.
 - **Git folder + sparse checkout**: clone exactly the subfolder you need from a large repo without pulling everything.
-- **Workspace-native deploy**: the **Deployments** (🚀) pane is an alternative to `databricks bundle deploy` from the CLI when attendees don't have the CLI installed.
+- **UI deploy and CLI deploy share the same bundle**: the **Deployments** (🚀) pane and `databricks bundle deploy` read the same `databricks.yml`. Hands-on-UI for learning and one-off promotions, CLI-in-CI for production.
 
 ---
 
-## Lab 4 — Send a temperature reading via Zerobus (REST, serverless-friendly)
+## Lab 4 — Push IoT temperature reading via Zerobus Ingest
 
-So far every table you've built has ingested from batch / streaming **sources that already exist** (sample tables, a JSON volume, Delta tables). Lab 4 flips that around: **you** are the producer. One HTTP POST per reading writes directly into a Delta table — no Kafka, no Auto Loader, no pipeline. That's **Zerobus Ingest**.
+> **Format: live instructor demo.** The instructor will run this end-to-end on the projector. Attendees are welcome to follow along in their own workspace — every asset is already provisioned for you — but the teaching point is the *governance surface* (scoped OAuth, SP audit identity, secret scope), which lands better when talked through than typed in silence. If you're short on time, watch and ask questions; come back to it later.
+
+Until now, data came to you. Sample tables, a JSON volume, a Delta stream — three ready-made sources. Lab 4 flips the script: **you** are the producer.
+
+One HTTP POST via the Zerobus REST API writes one row directly into `workshop.zerobus.course_temp` — no Kafka, no Auto Loader, no pipeline. A shared service principal plus scoped OAuth via `authorization_details` pin the token to `MODIFY` on that single table; secrets come from a shared scope. The lab is about the governance surface an external IoT device or microservice would inherit.
 
 Zerobus offers three interfaces (gRPC SDK, REST, OpenTelemetry). The SDK is best for high-throughput producers but can't `pip install` on serverless — so for this workshop you'll use the **REST API** (Beta), which is just `requests.post`. Perfect for "chatty" low-frequency producers like this one.
+
+### Why Zerobus when `INSERT` is right there?
+
+Fair question. From inside a Databricks notebook, attendees have a Spark session and could run `INSERT INTO workshop.zerobus.course_temp VALUES(...)` in two lines — if we granted them `MODIFY` on the table. We deliberately don't. Zerobus isn't built for notebooks with a Spark session. It's built for everything without one — IoT devices, microservices, edge gateways. The attendee notebook stands in for one of those external producers. What you're actually learning here — scoped OAuth via `authorization_details`, a POST to a Databricks-managed gRPC/REST gateway, a per-record ACK — is the exact code an external system would run. Running it from inside Databricks is the teaching compromise; the pattern is for outside.
 
 ### Target
 
@@ -498,15 +449,46 @@ On success you'll see:
 ✅ Sent to workshop.zerobus.course_temp: {'id': '…', 'city': 'Munich', 'temp': 21.5}
 ```
 
-### Step 4d — Verify
+### Step 4d — Verify in the notebook
 
 The last cell runs `spark.table("workshop.zerobus.course_temp").where("city = 'Munich'")`. Your row appears within a few seconds (Zerobus is at-least-once; order isn't guaranteed across producers).
 
+### Step 4e — Verify in Databricks SQL
+
+The notebook read the table as a producer; now read it as a consumer. This proves the row is a real row in a real governed table, queryable by anything that can talk to a SQL warehouse — a BI dashboard, a downstream pipeline, a JDBC client, `ai_query(...)`.
+
+1. Workspace sidebar → **SQL Editor** → **New query**.
+2. In the top-right warehouse picker, select the **course warehouse** — `<course_warehouse_name>` (ID `<course_warehouse_id>`). It was provisioned for you by the courseware, so it's already running; you don't need to start a warehouse of your own.
+3. Paste and run:
+
+```sql
+SELECT id, city, temp
+FROM workshop.zerobus.course_temp
+ORDER BY city, temp;
+```
+
+You should see every attendee's row, including your own. In a real production deployment this is the query a dashboard would run, refreshed on a schedule — same table, same grants, no separate serving tier.
+
+### Governance surface — who wrote what, and what could they write?
+
+This is the part of the design most workshop material skips. The SP+Zerobus model vs. a "just grant MODIFY and INSERT" model differ in ways that matter once you leave the workshop:
+
+| Dimension | Zerobus + SP (this lab) | Direct `INSERT` (attendees granted MODIFY) |
+|---|---|---|
+| **Producer identity in audit** | `workshop-zerobus-sp` — one row per ingest in the audit log, trivially traceable back to the Lab 4 flow. Queryable: `SELECT * FROM system.access.audit WHERE user_identity.email = 'workshop-zerobus-sp'`. | Each attendee's own user identity, mixed in with every other query they ran that session. Forensics have to filter by action type (`writeTable`) and table name. |
+| **What the credential can do** | SP token is minted per-request with `authorization_details` pinning it to `USE CATALOG` + `USE SCHEMA` + `MODIFY/SELECT` on **this one table**. A leaked token can only append rows to `course_temp`. Cannot `DELETE`, cannot `DROP`, cannot touch any other table. | Attendee holds a PAT / session token with whatever grants they have. `MODIFY` on the table allows `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `OPTIMIZE`, `VACUUM` — anything write-shaped. Harder to reason about. |
+| **Revocation** | Rotate the SP's OAuth client secret in the setup notebook — old secret stops working, scope gets the new one, attendees notice nothing. No per-attendee churn. | Have to revoke/adjust grants on the group. If attendees wandered off with a PAT, the PAT keeps working until it's explicitly revoked. |
+| **Credential surface** | Stored only in the `workshop` secret scope; `dbutils.secrets.get(...)` auto-redacts from notebook output; never lives in a notebook source file. | No extra credential — the attendee uses their own identity. Lower credential risk, but higher *authorization* risk because the identity is broad-purpose. |
+| **Scales to 1,000 producers?** | Yes: each producer gets its own SP or they all share one; either way the path of least privilege stays the same. | Doesn't apply outside Databricks — external producers have no Databricks user identity to authenticate as. |
+
+The TL;DR: the SP + scoped OAuth model **narrows the credential** (it can only do one thing on one table), **widens the audit trail** (you always know which producer flow wrote a row), and **scales to producers outside your workspace**. Direct `INSERT` is simpler for in-workspace use but can't express any of those properties.
+
 ### What to take away
 
-- **Direct-to-Delta ingest** — one POST, one row, no intermediate bus. Ideal for edge devices or low-volume producers.
-- **Fine-grained OAuth** — the `authorization_details` param scopes the token to a single table, not the whole workspace. A leaked token can only write to `course_temp`.
-- **Secret scope, not copy-paste** — attendees read creds from a scope, they're never in the notebook source. Re-running the setup rotates the secret with no change required on attendee side.
+- **Direct-to-Delta ingest** — one POST, one row, no intermediate bus. Ideal for edge devices or low-volume producers that live outside Databricks.
+- **Fine-grained OAuth — a hotel keycard, not a master key.** `authorization_details` scopes the token to one table: a leaked token can append rows to `course_temp`, and nothing else. No `SELECT *`, no `DELETE`, no `DROP`.
+- **Producer identity in audit** — `system.access.audit` attributes the write to `workshop-zerobus-sp`, not to the attendee. That's the right answer for "which pipeline produced this row?" queries.
+- **Secret scope, not copy-paste** — attendees read creds from `dbutils.secrets.get(...)`, which the Databricks UI auto-redacts. Creds never land in notebook source, exports, or screen shares.
 - **REST vs gRPC SDK trade-off** — REST is a handshake per record (higher per-record cost), gRPC holds a persistent stream (much higher throughput). For this workshop, one record per attendee, REST is the right call. At volume, use the SDK.
 - **Zerobus does not create tables** — the table must exist with the exact schema before any record can land.
 
@@ -514,21 +496,113 @@ The last cell runs `spark.table("workshop.zerobus.course_temp").where("city = 'M
 
 ---
 
+## Lab 5 — Iceberg side-quest (optional)
+
+> **Optional / take-home.** Skip if you're short on time — nothing else in the workshop depends on it. Run after Lab 1 or any time after; only the Bakehouse `sales_transactions` streaming table from Lab 1 is a prerequisite.
+
+Publish a derived bakehouse result as a **managed Iceberg table** and read it back with **PyIceberg** through the Unity Catalog Iceberg REST endpoint — no Spark session required. That's the portability pitch of Iceberg on Unity Catalog: the same table that Databricks writes is readable by Trino, Snowflake, OSS Spark, or any pure-Python client.
+
+### Step 5a — Top-5 sales locations as a managed Iceberg table (SQL, outside the pipeline)
+
+The streaming table from Lab 1 is Delta. To make a derived result readable by any Iceberg-compatible engine without configuring an external location for UniForm Compatibility Mode, the simplest path is a **CTAS into a managed Iceberg table** — run it *outside* the pipeline in the SQL editor or a `%sql` cell.
+
+Open a new SQL editor tab (sidebar **SQL Editor** → **Create new query**) and run, replacing `workshop` and `<user>`:
+
+```sql
+CREATE OR REPLACE TABLE workshop.<user>.global_sales_gold
+USING ICEBERG
+AS
+SELECT
+    f.city,
+    f.country,
+    COUNT(*)                    AS txn_count,
+    SUM(t.quantity)             AS units_sold,
+    ROUND(SUM(t.totalPrice), 2) AS gross_revenue
+FROM workshop.<user>.sales_transactions t
+JOIN samples.bakehouse.sales_franchises f
+    USING (franchiseID)
+GROUP BY f.city, f.country
+ORDER BY gross_revenue DESC
+LIMIT 5;
+```
+
+**Why this shape:**
+- `USING ICEBERG` creates a **native managed Iceberg table** — full read/write from Databricks *and* external engines via the UC Iceberg REST Catalog (IRC).
+- No `delta.universalFormat.*` properties, no `compatibility.location`, no external location to pre-configure. Managed Iceberg is self-contained.
+- Snapshot, not live. Re-run this CTAS (or swap to `INSERT OVERWRITE`) to refresh — acceptable for an analytics/gold table; if you need live-as-it-changes semantics, that's UniForm Compatibility Mode territory instead.
+- `samples.bakehouse.sales_franchises` supplies the `city` / `country` dimensions — `sales_transactions` itself only has `franchiseID`.
+
+Verify:
+
+```sql
+SELECT * FROM workshop.<user>.global_sales_gold;
+```
+
+You should see 5 rows, top cities by gross revenue. In `DESCRIBE EXTENDED`, the `Provider` column reads `iceberg`.
+
+### Step 5b — Read the Iceberg table with PyIceberg (Exploration notebook)
+
+Now read the same table with a lightweight Iceberg client — no Spark required.
+
+Asset browser → **Add → Exploration** → name `read_global_sales_gold` → language **Python** → **Create**. Paste:
+
+```python
+# MAGIC %pip install --upgrade "pyiceberg>=0.9,<0.10" "pyarrow>=17,<20"
+# (Azure workspaces only) %pip install adlfs
+dbutils.library.restartPython()
+```
+
+```python
+from pyiceberg.catalog import load_catalog
+
+WORKSPACE = spark.conf.get("spark.databricks.workspaceUrl")  # e.g. "dbc-xxx.cloud.databricks.com"
+CATALOG   = "workshop"   # workshop UC catalog
+SCHEMA    = "<user>"      # your pre-assigned schema
+TOKEN     = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()
+
+iceberg_catalog = load_catalog(
+    "uc",
+    uri=f"https://{WORKSPACE}/api/2.1/unity-catalog/iceberg-rest",
+    warehouse=CATALOG,     # pins the UC catalog — subsequent identifiers are <schema>.<table>
+    token=TOKEN,
+)
+
+tbl = iceberg_catalog.load_table(f"{SCHEMA}.global_sales_gold")
+print(tbl.current_snapshot())             # snapshot metadata proves this is Iceberg
+tbl.scan(limit=10).to_pandas()            # top-5 rows as pandas
+```
+
+Expected output: a pandas DataFrame with the same 5 cities you saw in Step 5a, plus snapshot metadata for the Iceberg table.
+
+**What you just demonstrated:**
+- `pip install pyiceberg` — no cluster restart, no Iceberg JARs, no Spark session. A pure-Python client talks to Unity Catalog via the **Iceberg REST Catalog** endpoint at `/api/2.1/unity-catalog/iceberg-rest`.
+- The `warehouse` parameter pins the UC catalog, so table identifiers collapse from three-part to two-part.
+- External clients run this same code. Supply a PAT or OAuth token and the workspace URL — done. That's the portability of Iceberg on Unity Catalog.
+
+**Requirements your admin has likely already set** (workshop attendees usually inherit these; flag with the instructor if any call fails with `403`):
+- `EXTERNAL USE SCHEMA` on `workshop.<user>`
+- External data access enabled on the workspace
+- Workspace IP access list (if enabled) allows your client
+
+> Reference copies of the CTAS and the PyIceberg reader live in [`lab5-iceberg/`](./lab5-iceberg/) alongside this guide.
+
+---
+
 ## Wrap-up
 
-You now have seven tables across Labs 1-2-4, a full deployed bundle from Lab 3, and an Iceberg side-quest:
+You now have six tables across Labs 1-2-4, a full deployed bundle from Lab 3, and an optional Iceberg side-quest in Lab 5:
 
 | Lab | Table | Type | Source | Language |
 |---|---|---|---|---|
 | 1 | `sales_transactions` | Streaming Table | `samples.bakehouse.sales_transactions` | Python |
-| 1 | `sales_stats` | Materialized View | `sales_transactions` | SQL |
-| 1 | `global_sales_gold` | Managed Iceberg table (CTAS, outside pipeline) | `sales_transactions` ⨝ `samples.bakehouse.sales_franchises` | SQL |
+| 1 | `sales_stats` | Materialized View (3 expectations) | `sales_transactions` | SQL |
 | 2 | `bookings_current` | Streaming Table + AutoCDC | `samples.wanderbricks.booking_updates` | SQL |
 | 2 | `booking_fraud_flags` | Streaming Table + Auto Loader | `/Volumes/workshop/shared/landing/booking_fraud_flags/` | SQL |
 | 2 | `payments` | Streaming Table | `samples.wanderbricks.payments` | SQL |
 | 2 | `booking_fraud_summary` | Materialized View | `bookings_current` ⨝ `payments` ⨝ `booking_fraud_flags` | SQL |
 | 3 | *(bundle)* | SDP pipelines + workflow + AI/BI dashboard deployed from `databricks/tmm/Lakeflow-Gourmet-Pipeline` | `workshop.<user>` | SQL |
 | 4 | `workshop.zerobus.course_temp` | Managed Delta table (shared), written via Zerobus REST | HTTP POST from attendee notebook | Python |
+| 5 *(optional)* | `global_sales_gold` | Managed Iceberg table (CTAS, outside pipeline) | `sales_transactions` ⨝ `samples.bakehouse.sales_franchises` | SQL |
 
 ### UI cheat sheet
 
@@ -542,6 +616,6 @@ You now have seven tables across Labs 1-2-4, a full deployed bundle from Lab 3, 
 | Run the whole pipeline | **Run pipeline** |
 | Schedule as a job | Top bar **Schedule** |
 | **Open Genie Code** | **Genie Code** button, upper-right of workspace |
-| **Toggle Agent mode** | **Agent** selector, lower-right of Genie Code panel |
+| **Toggle Agent mode** | **Agent** / **Chat** mode selector at the bottom of the Genie Code pane |
 | Clone a Git folder | Workspace sidebar **Create → Git folder** (sparse checkout supported) |
 | Deploy a bundle from UI | Open the bundle folder → **Deployments** icon (🚀) in the left pane |

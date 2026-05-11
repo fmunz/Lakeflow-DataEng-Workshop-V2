@@ -4,12 +4,13 @@ Databricks's new Data Engineering course, rebuilt around **Lakeflow Spark Declar
 
 ## What you'll do
 
-Four labs, ~130 minutes total:
+Four core labs (~100 minutes total) plus one optional side-quest:
 
-- **Lab 1 — Bakehouse (hand-coded).** Build a streaming table in Python (modern `from pyspark import pipelines as dp` API) and a materialized view in SQL over `samples.bakehouse.sales_transactions`, wire up three different data-quality expectations (log / drop / abort), then publish a managed-Iceberg gold table read back with PyIceberg. Reference files in [`lab1-bakehouse/`](./lab1-bakehouse/).
-- **Lab 2 — Wanderbricks (SQL, Genie-Code-generated).** Build a four-table fraud-detection pipeline from a single Genie Code prompt — AutoCDC over `samples.wanderbricks.booking_updates`, Auto Loader over JSON fraud flags in a shared volume, a join of payments, and a gold materialized view. Verify the generated SQL against the reference files in [`lab2-wanderbricks/`](./lab2-wanderbricks/) before letting it run.
-- **Lab 3 — Gourmet Pipeline (Databricks Asset Bundle deploy).** Clone [`databricks/tmm/Lakeflow-Gourmet-Pipeline`](https://github.com/databricks/tmm/tree/main/Lakeflow-Gourmet-Pipeline) into your workspace, adjust two bundle variables (`catalog_name`, `prod_warehouse_id`) so it targets your own `workshop.<user>`, deploy + run the bundle from the Workspace UI.
-- **Lab 4 — Zerobus direct ingest (REST).** Push one `{id, city, temp}` reading into the shared Delta table `workshop.zerobus.course_temp` via the Zerobus REST API — no SDK, no cluster dependency, service principal credentials fetched from a secret scope. Reference file in [`lab4-zerobus/`](./lab4-zerobus/).
+- **Lab 1 — Bakehouse (hand-coded).** Build a streaming table in Python (modern `from pyspark import pipelines as dp` API) and a materialized view in SQL over `samples.bakehouse.sales_transactions`, with three data-quality expectations (log / drop / abort) wired into the MV from the start. Reference files in [`lab1-bakehouse/`](./lab1-bakehouse/).
+- **Lab 2 — Learn how to use Genie Code (Wanderbricks).** Build a four-table fraud-detection pipeline from a single Genie Code prompt — AutoCDC over `samples.wanderbricks.booking_updates`, Auto Loader over JSON fraud flags in a shared volume, a join of payments, and a gold materialized view. Verify the generated SQL against the reference files in [`lab2-wanderbricks/`](./lab2-wanderbricks/) before letting it run.
+- **Lab 3 — CI/CD via Declarative Automation Bundles.** Clone [`databricks/tmm/Lakeflow-Gourmet-Pipeline`](https://github.com/databricks/tmm/tree/main/Lakeflow-Gourmet-Pipeline) into your workspace, retarget two bundle variables (`catalog_name`, `prod_warehouse_id`) so it points at `workshop.<user>`, and deploy from the Workspace UI — the same bundle a CI runner would ship with `databricks bundle deploy`.
+- **Lab 4 — Push IoT temperature reading via Zerobus Ingest** *(live instructor demo; attendees may follow along).* Push one `{id, city, temp}` reading into the shared Delta table `workshop.zerobus.course_temp` via the Zerobus REST API — no SDK, no cluster dependency, service principal credentials fetched from a secret scope. Reference file in [`lab4-zerobus/`](./lab4-zerobus/).
+- **Lab 5 — Iceberg side-quest** *(optional / take-home).* Publish a derived bakehouse result as a managed Iceberg table (`USING ICEBERG`) and read it back from a pure-Python PyIceberg client via the Unity Catalog Iceberg REST endpoint — no Spark session required. Reference files in [`lab5-iceberg/`](./lab5-iceberg/).
 
 See [Labguide.md](./Labguide.md) for the step-by-step exercises.
 
@@ -28,7 +29,7 @@ See [Labguide.md](./Labguide.md) for the step-by-step exercises.
 - `from pyspark import pipelines as dp`, `@dp.table(...)`
 - The new **Lakeflow Pipelines Editor** (asset browser, Run file / Run pipeline)
 - **Genie Code** Agent mode for AI-assisted pipeline authoring
-- **Databricks Asset Bundles** (DAB) — `databricks.yml` variables/targets, Workspace UI deploy (**Deployments** 🚀 pane)
+- **Declarative Automation Bundles** (DAB — formerly Databricks Asset Bundles) — `databricks.yml` variables/targets, Workspace UI deploy (**Deployments** 🚀 pane)
 - Git folder + sparse checkout for cloning a subfolder of a public repo
 
 ## Why V2
