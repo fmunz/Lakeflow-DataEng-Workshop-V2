@@ -1,7 +1,7 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Read `global_sales_gold` with PyIceberg
-# MAGIC Exploration notebook for Lab 1, Step 1d. Runs against the UC Iceberg REST Catalog — no Spark required.
+# MAGIC Exploration notebook for Lab 6, Step 6b. Runs against the UC Iceberg REST Catalog — no Spark required.
 
 # COMMAND ----------
 
@@ -18,7 +18,7 @@ from pyiceberg.catalog import load_catalog
 
 WORKSPACE = spark.conf.get("spark.databricks.workspaceUrl")
 CATALOG   = "workshop"
-SCHEMA    = "<user>"
+SCHEMA    = "USER_ID"
 TOKEN     = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()
 
 iceberg_catalog = load_catalog(

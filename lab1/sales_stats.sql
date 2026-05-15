@@ -9,15 +9,14 @@ CREATE OR REFRESH MATERIALIZED VIEW sales_stats (
     CONSTRAINT nonneg_revenue
         EXPECT (gross_revenue >= 0) ON VIOLATION DROP ROW,
 
-    -- 3. FAIL UPDATE: payment method must be populated.
+    -- 3. FAIL UPDATE: product must be populated.
     --    Any violation aborts the whole pipeline update with the constraint name.
-    CONSTRAINT known_payment_method
-        EXPECT (paymentMethod IS NOT NULL) ON VIOLATION FAIL UPDATE
+    CONSTRAINT known_product
+        EXPECT (product IS NOT NULL) ON VIOLATION FAIL UPDATE
 )
-COMMENT 'Sales KPIs grouped by product and payment method, with data-quality expectations'
+COMMENT 'Sales KPIs grouped by product, with data-quality expectations'
 AS SELECT
     product,
-    paymentMethod,
     COUNT(*)                     AS txn_count,
     SUM(quantity)                AS units_sold,
     ROUND(SUM(totalPrice), 2)    AS gross_revenue,
@@ -25,4 +24,4 @@ AS SELECT
     COUNT(DISTINCT customerID)   AS unique_customers,
     COUNT(DISTINCT franchiseID)  AS franchises_selling
 FROM sales_transactions
-GROUP BY product, paymentMethod;
+GROUP BY product;

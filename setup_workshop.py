@@ -195,7 +195,7 @@ print(f"Table ready: {CATALOG}.zerobus.course_temp")
 # COMMAND ----------
 
 from databricks.sdk import WorkspaceClient
-from databricks.sdk.service import iam
+from databricks.sdk.service.workspace import AclPermission
 
 w = WorkspaceClient()
 SP_DISPLAY_NAME = "workshop-zerobus-sp"
@@ -221,10 +221,20 @@ SP_ID             = sp.id  # workspace-scoped SP id
 
 # COMMAND ----------
 
-# service_principal_secrets_proxy: workspace-level SP OAuth secret management.
-# Returns .secret (client_secret) exactly once.
-secret_resp = w.service_principal_secrets_proxy.create(service_principal_id=int(SP_ID))
-SP_CLIENT_SECRET = secret_resp.secret
+# The workspace-level SP-OAuth-secret proxy endpoint isn't uniformly exposed across SDK
+# versions (missing on databricks-sdk 0.20.x which ships on DBR serverless), so we call
+# the REST endpoint directly. Returns secretHash, secret, createTime, expireTime, status.
+import requests
+
+_ctx_api_token = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()
+_host_for_sp_api = "https://" + spark.conf.get("spark.databricks.workspaceUrl")
+_sp_secret_resp = requests.post(
+    f"{_host_for_sp_api}/api/2.0/accounts/servicePrincipals/{SP_ID}/credentials/secrets",
+    headers={"Authorization": f"Bearer {_ctx_api_token}"},
+    timeout=30,
+)
+_sp_secret_resp.raise_for_status()
+SP_CLIENT_SECRET = _sp_secret_resp.json()["secret"]
 print(f"Generated new OAuth client secret for SP {SP_APPLICATION_ID} (shown once, written to scope below)")
 
 # COMMAND ----------
@@ -276,7 +286,7 @@ for k, v in [
 ]:
     w.secrets.put_secret(scope=SCOPE, key=k, string_value=v)
 
-w.secrets.put_acl(scope=SCOPE, principal="account users", permission=iam.WorkspaceObjectPermissionLevel.READ)
+w.secrets.put_acl(scope=SCOPE, principal="account users", permission=AclPermission.READ)
 print(f"Wrote 5 secrets to scope '{SCOPE}' and granted READ to `account users`.")
 
 # COMMAND ----------

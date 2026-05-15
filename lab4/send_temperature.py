@@ -70,10 +70,12 @@ _WORKSPACE_ID  = dbutils.secrets.get(SCOPE, "zerobus_workspace_id")
 
 def _fetch_oauth_token() -> str:
     """Exchange SP client credentials for a Zerobus-scoped OAuth access token."""
+    # UC OAuth authorization_details requires the underscore form of privilege names
+    # (USE_CATALOG, USE_SCHEMA), unlike the spaced form accepted by the SQL GRANT statement.
     authorization_details = json.dumps([
-        {"type": "unity_catalog_privileges", "privileges": ["USE CATALOG"],
+        {"type": "unity_catalog_privileges", "privileges": ["USE_CATALOG"],
          "object_type": "CATALOG", "object_full_path": CATALOG},
-        {"type": "unity_catalog_privileges", "privileges": ["USE SCHEMA"],
+        {"type": "unity_catalog_privileges", "privileges": ["USE_SCHEMA"],
          "object_type": "SCHEMA",  "object_full_path": f"{CATALOG}.{SCHEMA}"},
         {"type": "unity_catalog_privileges", "privileges": ["SELECT", "MODIFY"],
          "object_type": "TABLE",   "object_full_path": f"{CATALOG}.{SCHEMA}.{TABLE}"},
@@ -126,8 +128,10 @@ print(f"✅ Sent to {CATALOG}.{SCHEMA}.{TABLE}: {sent}")
 
 # COMMAND ----------
 
+from pyspark.sql.functions import col
+
 display(
     spark.table(f"{CATALOG}.{SCHEMA}.{TABLE}")
-         .where(f"city = '{CITY}'")
+         .where(col("city") == CITY)
          .orderBy("id")
 )
